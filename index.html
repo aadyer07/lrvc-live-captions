@@ -368,7 +368,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     <div class="field">
       <label for="corrections">Word fixes</label>
       <textarea id="corrections" placeholder="bridgeton => Bridgton&#10;first john => 1 John&#10;habakuk => Habakkuk"></textarea>
-      <small>One per line: what it hears, then <b>=&gt;</b>, then what it should say.</small>
+      <small>One per line: what it hears, then <b>=&gt;</b>, then what it should say. Swear words are always left out of the captions (Hell is allowed). Add a fix here if you'd rather swap a misheard swear for the right word, like <b>bitches =&gt; ditches</b>.</small>
     </div>
   </section>
 
@@ -524,10 +524,21 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     });
   }
   const applyRules = (t) => { rules.forEach(([re, to]) => { t = t.replace(re, to); }); return t; };
+  // Church filter: swears never reach the screen. "Hell" is allowed on purpose.
+  // Word fixes run first, so a fix like "bitches => ditches" wins over a plain removal.
+  const SWEARS = new RegExp("\\b(?:" + [
+    "\\w*fuck\\w*", "(?!shittim\\b)\\w*shit\\w*", "bitch\\w*", "bastards?", "goddam\\w*",
+    "damn(?:s|ed|it|ing)?", "dammit", "asshole\\w*", "jackass\\w*", "dumbass\\w*",
+    "cunt\\w*", "dickheads?", "piss(?:ed|es|ing)?", "sluts?", "whores?",
+    "nigg\\w*", "fag\\w*"
+  ].join("|") + ")\\b[.,?!;:]?|\\S*\\*{2,}\\S*", "gi");
+  const clean = (t) => t.replace(SWEARS, (m) => (/[.?!]$/.test(m) ? m.slice(-1) : ""))
+    .replace(/\s+([,.?!;:])/g, "$1").replace(/\s{2,}/g, " ").trim().replace(/^[,.?!;:]+\s*/, "");
   function tidyBrowser(text, seg) {
     let t = text.replace(/\s+/g, " ").trim();
     if (!t) return t;
-    t = applyRules(t);
+    t = clean(applyRules(t));
+    if (!t) return t;
     if (S.lang.startsWith("en")) t = t.replace(/\bi\b/g, "I").replace(/\bi'(m|ve|ll|d)\b/gi, (m, a) => "I'" + a.toLowerCase());
     const prev = seg.chunks.length ? seg.chunks[seg.chunks.length - 1].x : "";
     if (!prev || /[.?!]$/.test(prev)) t = t.charAt(0).toLocaleUpperCase(S.lang === "multi" ? undefined : S.lang) + t.slice(1);
@@ -602,7 +613,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   }
   function setInterim(text) {
     if (!interimEl) return;
-    const t = text.trim();
+    const t = clean(text);
     interimEl.textContent = t ? ((current && current.chunks.length) ? " " : "") + t : "";
   }
   els.captions.addEventListener("scroll", () => {
@@ -894,7 +905,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     const flush = () => {
       if (!run.length || !current) { run = []; return; }
       const raw = run.map((w) => w.punctuated_word || w.word).join(" ");
-      const fixed = applyRules(raw);
+      const fixed = clean(applyRules(raw));
+      if (!fixed) { run = []; return; }
       const avg = run.reduce((n, w) => n + (w.confidence || 0), 0) / run.length;
       const chunk = { x: fixed, c: avg };
       if (fixed === raw) chunk.w = run.map((w) => ({ x: w.punctuated_word || w.word, c: w.confidence || 0 }));
